@@ -7,14 +7,14 @@ LLVM-brainfuck uses inkwell, a LLVM wrapper written in Rust.
 ## Build
 
 ```sh
-git clone https://github.com/tamaroning/llvm-brainfuck
-cd llvm-brainfuck
-cargo build --release
+$ git clone https://github.com/tamaroning/llvm-brainfuck
+$ cd llvm-brainfuck
+$ cargo build --release
 ```
 
 ## JIT Compile and Run
 ```sh
-target/release/llvm-brainfuck [source code]
+$ target/release/llvm-brainfuck [source code]
 ```
 
 # Example
