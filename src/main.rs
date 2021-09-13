@@ -1,9 +1,19 @@
 use std::env;
+use std::collections::VecDeque;
+
 use inkwell::context::Context;
 use inkwell::builder::Builder;
 use inkwell::OptimizationLevel;
 use inkwell::module::Linkage;
 use inkwell::values::{IntValue, PointerValue};
+use inkwell::IntPredicate;
+use inkwell::basic_block::BasicBlock;
+
+struct WhileBlock<'ctx> {
+    while_start: BasicBlock<'ctx>,
+    while_body: BasicBlock<'ctx>,
+    while_end: BasicBlock<'ctx>,
+}
 
 fn main() {
     // command line arguments
@@ -50,6 +60,9 @@ fn main() {
 
     builder.build_store(ptr, builder.build_load(buff, ""));
 
+    // []block stack
+    let mut while_blocks = VecDeque::new();
+
     for c in program.chars() {
         match c {
             '+' => {
@@ -71,21 +84,51 @@ fn main() {
                 };
                 builder.build_store(ptr, res);
             },
+            '<' => {
+                let p = builder.build_load(ptr, "").into_pointer_value();
+                let res = unsafe {
+                    // u64::MAXで-1が表現できるのはなぜ??
+                    builder.build_in_bounds_gep(p, &[i32_type.const_int(u64::MAX as u64, true)], "")
+                };
+                builder.build_store(ptr, res);
+            },
             '.' => {
                 let val = builder.build_load(builder.build_load(ptr, "").into_pointer_value(), "").into_int_value();
                 let sext = builder.build_int_s_extend(val, i32_type, "");
                 builder.build_call(putchar_func, &[sext.into()], "");
-            }
+            },
+            '[' => {
+                let while_block = WhileBlock {
+                    while_start: context.append_basic_block(main_func, format!("start{}", while_blocks.len()).as_str()),
+                    while_body: context.append_basic_block(main_func, format!("body{}", while_blocks.len()).as_str()),
+                    while_end: context.append_basic_block(main_func, format!("end{}", while_blocks.len()).as_str()),
+                };
+                while_blocks.push_front(while_block);
+                // moveが発生するのでcloneする
+                let while_block = while_blocks.front().unwrap();
 
+                builder.build_unconditional_branch(while_block.while_start);
+                builder.position_at_end(while_block.while_start);
+
+                let i8_zero = i8_type.const_int(0, false);
+                let ptr_load = builder.build_load(ptr, "").into_pointer_value();
+                let ptr_load_load = builder.build_load(ptr_load, "").into_int_value();
+                let cmp = builder.build_int_compare(IntPredicate::NE, ptr_load_load, i8_zero, "");
+
+                builder.build_conditional_branch(cmp, while_block.while_body, while_block.while_end);
+                builder.position_at_end(while_block.while_body);
+            },
+            ']' => {
+                if let Some(while_block) = while_blocks.pop_front() {
+                    builder.build_unconditional_branch(while_block.while_start);
+                    builder.position_at_end(while_block.while_end);
+                } else {
+                    panic!("unmatched ']'");
+                };
+            },
             _ => ()
         };
     }
-
-    // globalに文字列を宣言
-    //let hw_string_ptr = builder.build_global_string_ptr("Hello, world!", "hw");
-
-    // printfをcall
-    //builder.build_call(printf_func, &[hw_string_ptr.as_pointer_value().into()], "call");
 
     // ret i32 0
     builder.build_return(Some(&i32_type.const_int(0, false)));
